@@ -3250,25 +3250,16 @@ public class CommandLineArgumentParser {
 
                     new ImageImporter().importImage((ImageTag)tag, Helper.readFile(name));
                 } catch (IOException e) {
-                    System.err.println("Import error");
-                    System.exit(1);
-                }
-                break;
-            case "imagelossless":
-                try {
-                    tag = new DefineBitsLosslessTag(swf);
-                    new ImageImporter().importImage((ImageTag)tag, Helper.readFile(name));
-                } catch (IOException e) {
-                    System.err.println("Import error");
+                    System.err.println("Image import error: " + e);
                     System.exit(1);
                 }
                 break;
             case "sprite":
-                try {
+                try (FileInputStream fis = new FileInputStream(file)) {
                     tag = new DefineSpriteTag(swf);
-                    new ImageImporter().importImage((ImageTag)tag, Helper.readFile(name));
+                    new SpriteImporter().importSprite((DefineSpriteTag)tag, fis);
                 } catch (IOException e) {
-                    System.err.println("Import error");
+                    System.err.println("Sprite import error: " + e);
                     System.exit(1);
                 }
                 break;
@@ -3288,11 +3279,11 @@ public class CommandLineArgumentParser {
                     try {
                         new SoundImporter().importSound((DefineSoundTag)tag, fis, soundFormat);
                     } catch(SoundImportException e) {
-                        System.err.println("Import error");
+                        System.err.println("Sound import error: " + e);
                         System.exit(1);
                     }
                 } catch (IOException e) {
-                    System.err.println("Import error");
+                    System.err.println("Sound import error: " + e);
                     System.exit(1);
                 }
                 break;
