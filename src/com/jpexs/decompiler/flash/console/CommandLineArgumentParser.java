@@ -132,18 +132,7 @@ import com.jpexs.decompiler.flash.importers.TextImporter;
 import com.jpexs.decompiler.flash.importers.amf.amf3.Amf3Importer;
 import com.jpexs.decompiler.flash.importers.amf.amf3.Amf3ParseException;
 import com.jpexs.decompiler.flash.importers.svg.SvgImporter;
-import com.jpexs.decompiler.flash.tags.ABCContainerTag;
-import com.jpexs.decompiler.flash.tags.DefineBinaryDataTag;
-import com.jpexs.decompiler.flash.tags.DefineBitsJPEG2Tag;
-import com.jpexs.decompiler.flash.tags.DefineBitsJPEG3Tag;
-import com.jpexs.decompiler.flash.tags.DefineSpriteTag;
-import com.jpexs.decompiler.flash.tags.DefineVideoStreamTag;
-import com.jpexs.decompiler.flash.tags.FileAttributesTag;
-import com.jpexs.decompiler.flash.tags.JPEGTablesTag;
-import com.jpexs.decompiler.flash.tags.PlaceObject4Tag;
-import com.jpexs.decompiler.flash.tags.ScriptLimitsTag;
-import com.jpexs.decompiler.flash.tags.SetBackgroundColorTag;
-import com.jpexs.decompiler.flash.tags.Tag;
+import com.jpexs.decompiler.flash.tags.*;
 import com.jpexs.decompiler.flash.tags.base.ASMSource;
 import com.jpexs.decompiler.flash.tags.base.ButtonTag;
 import com.jpexs.decompiler.flash.tags.base.CharacterIdTag;
@@ -162,6 +151,7 @@ import com.jpexs.decompiler.flash.tags.base.SoundTag;
 import com.jpexs.decompiler.flash.tags.base.TextImportErrorHandler;
 import com.jpexs.decompiler.flash.tags.base.TextTag;
 import com.jpexs.decompiler.flash.tags.base.UnsupportedSamplingRateException;
+import com.jpexs.decompiler.flash.timeline.Frame;
 import com.jpexs.decompiler.flash.timeline.Timeline;
 import com.jpexs.decompiler.flash.timeline.Timelined;
 import com.jpexs.decompiler.flash.treeitems.OpenableList;
@@ -172,12 +162,7 @@ import com.jpexs.decompiler.flash.xfl.FLAVersion;
 import com.jpexs.decompiler.flash.xfl.XFLExportSettings;
 import com.jpexs.decompiler.graph.CompilationException;
 import com.jpexs.decompiler.graph.DottedChain;
-import com.jpexs.helpers.CancellableWorker;
-import com.jpexs.helpers.Helper;
-import com.jpexs.helpers.MemoryInputStream;
-import com.jpexs.helpers.Path;
-import com.jpexs.helpers.ProgressListener;
-import com.jpexs.helpers.SerializableImage;
+import com.jpexs.helpers.*;
 import com.jpexs.helpers.stat.StatisticData;
 import com.jpexs.helpers.stat.Statistics;
 import com.jpexs.helpers.streams.SeekableInputStream;
@@ -339,6 +324,16 @@ public class CommandLineArgumentParser {
             out.println(" ...shows commandline arguments (this help)");
             out.println(" " + (cnt++) + ") <infile> [<infile2> <infile3> ...]");
             out.println(" ...opens SWF file(s) with the decompiler GUI");
+        }
+
+        if (filter == null || filter.equals("adddata")) {
+            out.println(" " + (cnt++) + ") -adddata <infile> <outfile> <datafile> <type>");
+            out.println("  ..add <datafile> to <infile> with the tag type <type> and save the result to <outfile>.");
+            out.println("    Values for <type> parameter:");
+            out.println("        image - Image, (PNG, JPEG)");
+            out.println("        sprite - Sprite (PNG)");
+            out.println("        binaryData - Binary data (raw data)");
+            out.println("        sound - Sounds (MP3, WAV)");
         }
 
         if (filter == null || filter.equals("proxy")) {
@@ -1093,6 +1088,8 @@ public class CommandLineArgumentParser {
         } else if (command.equals("flashpaper2pdf")) {
             parseFlashPaperToPdf(selection, zoom, args, charset);
             System.exit(0);
+        } else if (command.equals("adddata")) {
+            parseAddData(args, charset);
         } else if (command.equals("replace")) {
             parseReplace(args, charset, air);
             System.exit(0);
@@ -3215,6 +3212,108 @@ public class CommandLineArgumentParser {
             System.err.println("I/O error during reading");
             System.exit(2);
         }
+    }
+
+    private static void parseAddData(Stack<String> args, String charset) {
+        if (args.size() < 4) {
+            badArguments("adddata");
+        }
+
+        File inFile = new File(args.pop());
+        File outFile = new File(args.pop());
+
+        SWF swf = null;
+
+        String name = args.pop();
+        String dataType = args.pop();
+
+        File file = new File(name);
+
+        try {
+            try (StdInAwareFileInputStream is = new StdInAwareFileInputStream(inFile)) {
+                swf = new SWF(is, Configuration.parallelSpeedUp.get(), charset);
+            }
+        } catch (IOException | InterruptedException e) {
+            System.err.println("I/O error during reading");
+            System.exit(2);
+        }
+
+        Tag tag = null;
+        switch(dataType) {
+            case "image":
+                try {
+                    if (name.substring(name.indexOf('.')).equals(".png")) {
+                        tag = new DefineBitsLosslessTag(swf);
+                    } else {
+                        tag = new DefineBitsJPEG2Tag(swf);
+                    }
+
+                    new ImageImporter().importImage((ImageTag)tag, Helper.readFile(name));
+                } catch (IOException e) {
+                    System.err.println("Import error");
+                    System.exit(1);
+                }
+                break;
+            case "imagelossless":
+                try {
+                    tag = new DefineBitsLosslessTag(swf);
+                    new ImageImporter().importImage((ImageTag)tag, Helper.readFile(name));
+                } catch (IOException e) {
+                    System.err.println("Import error");
+                    System.exit(1);
+                }
+                break;
+            case "sprite":
+                try {
+                    tag = new DefineSpriteTag(swf);
+                    new ImageImporter().importImage((ImageTag)tag, Helper.readFile(name));
+                } catch (IOException e) {
+                    System.err.println("Import error");
+                    System.exit(1);
+                }
+                break;
+            case "binaryData":
+                tag = new DefineBinaryDataTag(swf);
+                new BinaryDataImporter().importData((DefineBinaryDataTag) tag, Helper.readFile(name));
+                break;
+            case "sound":
+                tag = new DefineSoundTag(swf);
+
+                int soundFormat = SoundFormat.FORMAT_UNCOMPRESSED_LITTLE_ENDIAN;
+                if (file.getAbsolutePath().toLowerCase(Locale.ENGLISH).endsWith(".mp3")) {
+                    soundFormat = SoundFormat.FORMAT_MP3;
+                }
+                
+                try (FileInputStream fis = new FileInputStream(file)) {
+                    try {
+                        new SoundImporter().importSound((DefineSoundTag)tag, fis, soundFormat);
+                    } catch(SoundImportException e) {
+                        System.err.println("Import error");
+                        System.exit(1);
+                    }
+                } catch (IOException e) {
+                    System.err.println("Import error");
+                    System.exit(1);
+                }
+                break;
+            default:
+                System.err.println("Invalid datatype " + dataType);
+                System.exit(1);
+                break;
+        }
+
+        CharacterIdTag t = swf.getCharacter(55);
+        SWF.addTagBefore(tag, (Tag)t);
+
+        try {
+            try (OutputStream fos = new BufferedOutputStream(new FileOutputStream(outFile))) {
+                swf.saveTo(fos);
+            }
+        } catch (IOException e) {
+            System.err.println("I/O error during writing");
+            System.exit(2);
+        }
+
     }
 
     private static void parseReplace(Stack<String> args, String charset, boolean air) {
