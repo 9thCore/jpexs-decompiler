@@ -3219,8 +3219,11 @@ public class CommandLineArgumentParser {
             badArguments("adddata");
         }
 
-        File inFile = new File(args.pop());
-        File outFile = new File(args.pop());
+        String inFileName = args.pop();
+        String outFileName = args.pop();
+
+        File inFile = new File(inFileName);
+        File outFile = new File(outFileName);
 
         SWF swf = null;
 
@@ -3254,6 +3257,7 @@ public class CommandLineArgumentParser {
                     System.exit(1);
                 }
                 break;
+                /* currently broken
             case "sprite":
                 try (FileInputStream fis = new FileInputStream(file)) {
                     tag = new DefineSpriteTag(swf);
@@ -3263,6 +3267,7 @@ public class CommandLineArgumentParser {
                     System.exit(1);
                 }
                 break;
+                 */
             case "binaryData":
                 tag = new DefineBinaryDataTag(swf);
                 new BinaryDataImporter().importData((DefineBinaryDataTag) tag, Helper.readFile(name));
@@ -3286,6 +3291,12 @@ public class CommandLineArgumentParser {
                     System.err.println("Sound import error: " + e);
                     System.exit(1);
                 }
+                break;
+            case "script":
+                tag = new DoABC2Tag(swf);
+                ((DoABC2Tag)tag).name = name;
+                ((DoABC2Tag)tag).flags = 1;
+                tag.forceWriteAsLong = true;
                 break;
             default:
                 System.err.println("Invalid datatype " + dataType);
