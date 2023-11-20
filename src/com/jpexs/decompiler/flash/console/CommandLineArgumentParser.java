@@ -16,18 +16,7 @@
  */
 package com.jpexs.decompiler.flash.console;
 
-import com.jpexs.decompiler.flash.AbortRetryIgnoreHandler;
-import com.jpexs.decompiler.flash.ApplicationInfo;
-import com.jpexs.decompiler.flash.Bundle;
-import com.jpexs.decompiler.flash.EventListener;
-import com.jpexs.decompiler.flash.IdentifiersDeobfuscation;
-import com.jpexs.decompiler.flash.OpenableSourceInfo;
-import com.jpexs.decompiler.flash.ReadOnlyTagList;
-import com.jpexs.decompiler.flash.SWF;
-import com.jpexs.decompiler.flash.SWFCompression;
-import com.jpexs.decompiler.flash.SearchMode;
-import com.jpexs.decompiler.flash.SwfOpenException;
-import com.jpexs.decompiler.flash.ValueTooLargeException;
+import com.jpexs.decompiler.flash.*;
 import com.jpexs.decompiler.flash.abc.ABC;
 import com.jpexs.decompiler.flash.abc.RenameType;
 import com.jpexs.decompiler.flash.abc.ScriptPack;
@@ -36,6 +25,7 @@ import com.jpexs.decompiler.flash.abc.avm2.deobfuscation.DeobfuscationLevel;
 import com.jpexs.decompiler.flash.abc.avm2.parser.AVM2ParseException;
 import com.jpexs.decompiler.flash.abc.avm2.parser.pcode.ASM3Parser;
 import com.jpexs.decompiler.flash.abc.avm2.parser.pcode.MissingSymbolHandler;
+import com.jpexs.decompiler.flash.abc.avm2.parser.script.AbcIndexing;
 import com.jpexs.decompiler.flash.abc.avm2.parser.script.ActionScript3Parser;
 import com.jpexs.decompiler.flash.abc.types.Decimal;
 import com.jpexs.decompiler.flash.abc.types.Float4;
@@ -107,6 +97,7 @@ import com.jpexs.decompiler.flash.gui.SearchInMemory;
 import com.jpexs.decompiler.flash.gui.SearchInMemoryListener;
 import com.jpexs.decompiler.flash.gui.SwfInMemory;
 import com.jpexs.decompiler.flash.gui.helpers.CheckResources;
+import com.jpexs.decompiler.flash.gui.tagtree.TagTreeContextMenu;
 import com.jpexs.decompiler.flash.gui.translator.Translator;
 import com.jpexs.decompiler.flash.helpers.FileTextWriter;
 import com.jpexs.decompiler.flash.helpers.SWFDecompilerPlugin;
@@ -331,9 +322,10 @@ public class CommandLineArgumentParser {
             out.println("  ..add <datafile> to <infile> with the tag type <type> and save the result to <outfile>.");
             out.println("    Values for <type> parameter:");
             out.println("        image - Image, (PNG, JPEG)");
-            out.println("        sprite - Sprite (PNG)");
+            // out.println("        sprite - Sprite (PNG)");
             out.println("        binaryData - Binary data (raw data)");
             out.println("        sound - Sounds (MP3, WAV)");
+            out.println("        script - AS3 script");
         }
 
         if (filter == null || filter.equals("proxy")) {
@@ -3241,6 +3233,8 @@ public class CommandLineArgumentParser {
             System.exit(2);
         }
 
+        CharacterIdTag t = swf.getCharacter(55);
+
         Tag tag = null;
         switch(dataType) {
             case "image":
@@ -3293,10 +3287,23 @@ public class CommandLineArgumentParser {
                 }
                 break;
             case "script":
-                tag = new DoABC2Tag(swf);
-                ((DoABC2Tag)tag).name = name;
-                ((DoABC2Tag)tag).flags = 1;
-                tag.forceWriteAsLong = true;
+                DoABC2Tag abc2Tag = new DoABC2Tag(swf);
+                abc2Tag.name = name;
+                abc2Tag.flags = 1;
+                abc2Tag.forceWriteAsLong = true;
+
+                try {
+                    AbcIndexing abcIndex = swf.getAbcIndex();
+                    abcIndex.selectAbc(abc2Tag.getABC());
+                    ActionScript3Parser parser = new ActionScript3Parser(abcIndex);
+
+                    parser.addScript(Helper.readTextFile(name), name, 0, 0);
+                } catch (IOException | InterruptedException | AVM2ParseException | CompilationException e) {
+                    System.out.println("Script import error: " + e);
+                    System.exit(1);
+                }
+
+                tag = abc2Tag;
                 break;
             default:
                 System.err.println("Invalid datatype " + dataType);
@@ -3304,7 +3311,6 @@ public class CommandLineArgumentParser {
                 break;
         }
 
-        CharacterIdTag t = swf.getCharacter(55);
         SWF.addTagBefore(tag, (Tag)t);
 
         try {
